@@ -1,0 +1,4 @@
+2025/09/21 16:45:42 收据服务启动在端口:8089
+2025/09/21 16:45:42 健康检查: http://localhost:8089/health
+2025/09/21 16:45:42 生成收据: POST http://localhost:8089/api/receipt/generate
+2025/09/21 16:45:42 启动服务器失败:listen tcp :8089: bind: address already in use

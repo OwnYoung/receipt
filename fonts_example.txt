@@ -1,0 +1,27 @@
+如果要支持中文字体，需要在 generateSimplePDF 函数中做以下修改：
+
+// 添加中文字体支持的示例代码
+func (s *PDFService) generateSimplePDFWithChinese(data *model.ReceiptData, outputPath string) error {
+    pdf := gopdf.GoPdf{}
+    pdf.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
+    pdf.AddPage()
+
+    // 加载中文字体
+    fontPath := "fonts/FangZhengFangSong-GBK-1.ttf"
+    err := pdf.AddTTFFont("chinese", fontPath)
+    if err != nil {
+        // 如果中文字体加载失败，回退到英文字体
+        return s.generateSimplePDF(data, outputPath)
+    }
+
+    // 设置中文字体
+    err = pdf.SetFont("chinese", "", 14)
+    if err != nil {
+        return s.generateSimplePDF(data, outputPath)
+    }
+
+    // 然后可以直接使用中文文本，不需要 romanize 函数
+    // ...
+}
+
+但是考虑到之前的崩溃问题，建议先保持当前的实现。

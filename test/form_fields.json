@@ -1,0 +1,105 @@
+{
+	"header": {
+		"source": "receipt_template.pdf",
+		"version": "pdfcpu v0.6.0 dev",
+		"creation": "2025-09-21 16:44:39 CST",
+		"creator": "WPS 表格",
+		"producer": "3.0.26 (5.1.12) "
+	},
+	"forms": [
+		{
+			"textfield": [
+				{
+					"pages": [
+						1
+					],
+					"id": "13",
+					"name": "payer",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "14",
+					"name": "purpose",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "17",
+					"name": "rent_zh",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "15",
+					"name": "rent",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "12",
+					"name": "id",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "18",
+					"name": "month",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "10",
+					"name": "recipient",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "16",
+					"name": "room_number",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				},
+				{
+					"pages": [
+						1
+					],
+					"id": "11",
+					"name": "date",
+					"value": "",
+					"multiline": false,
+					"locked": false
+				}
+			]
+		}
+	]
+}

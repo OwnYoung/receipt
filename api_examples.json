@@ -1,0 +1,83 @@
+{
+  "name": "receipt-service-requests",
+  "description": "收据生成服务API测试请求集合",
+  "requests": [
+    {
+      "name": "健康检查",
+      "method": "GET",
+      "url": "http://localhost:8080/health",
+      "description": "检查服务是否正常运行"
+    },
+    {
+      "name": "服务信息",
+      "method": "GET", 
+      "url": "http://localhost:8080/",
+      "description": "获取服务基本信息和可用端点"
+    },
+    {
+      "name": "预览收据信息",
+      "method": "POST",
+      "url": "http://localhost:8080/api/receipt/info",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "rent": 1500.00,
+        "room_number": "101",
+        "recipient": "张三",
+        "payer": "李四",
+        "date": "2025-09-21",
+        "month": "2025年9月",
+        "purpose": "房租"
+      },
+      "description": "预览收据信息，不生成PDF文件。返回包含收据ID和中文大写金额的完整信息"
+    },
+    {
+      "name": "生成收据PDF",
+      "method": "POST",
+      "url": "http://localhost:8080/api/receipt/generate",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "rent": 1500.00,
+        "room_number": "101", 
+        "recipient": "张三",
+        "payer": "李四",
+        "date": "2025-09-21",
+        "month": "2025年9月",
+        "purpose": "房租"
+      },
+      "description": "生成收据PDF文件并下载"
+    },
+    {
+      "name": "生成收据PDF（最小参数）",
+      "method": "POST",
+      "url": "http://localhost:8080/api/receipt/generate",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "rent": 2000.00,
+        "room_number": "A座202",
+        "recipient": "王五",
+        "payer": "赵六"
+      },
+      "description": "使用最小必需参数生成收据，其他字段使用默认值"
+    }
+  ],
+  "curl_examples": [
+    {
+      "name": "健康检查",
+      "command": "curl http://localhost:8080/health"
+    },
+    {
+      "name": "预览收据信息", 
+      "command": "curl -X POST http://localhost:8080/api/receipt/info -H \"Content-Type: application/json\" -d '{\"rent\": 1500.00, \"room_number\": \"101\", \"recipient\": \"张三\", \"payer\": \"李四\"}'"
+    },
+    {
+      "name": "生成并下载收据PDF",
+      "command": "curl -X POST http://localhost:8080/api/receipt/generate -H \"Content-Type: application/json\" -d '{\"rent\": 1500.00, \"room_number\": \"101\", \"recipient\": \"张三\", \"payer\": \"李四\"}' --output receipt.pdf"
+    }
+  ]
+}
