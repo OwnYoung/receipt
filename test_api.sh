@@ -35,13 +35,23 @@ curl -s -X POST "$BASE_URL/api/receipt/info" \
 
 # 3. 测试小程序接口（Base64）
 echo ""
-echo "3️⃣ 测试小程序接口 (Base64)..."
+echo "3️⃣ 测试小程序接口 (Base64 PDF)..."
 RESPONSE=$(curl -s -X POST "$BASE_URL/api/receipt/miniprogram" \
   -H "Content-Type: application/json" \
   -d "$TEST_DATA")
 
 echo "$RESPONSE" | jq '. | del(.data.pdfBase64)'  # 隐藏Base64数据以便查看
 echo "📄 PDF Base64数据长度: $(echo "$RESPONSE" | jq -r '.data.pdfBase64 // ""' | wc -c) 字符"
+
+# 3.5. 测试小程序图片接口（Base64图片）
+echo ""
+echo "3️⃣.5️⃣ 测试小程序图片接口 (Base64 图片)..."
+IMAGE_RESPONSE=$(curl -s -X POST "$BASE_URL/api/receipt/generate-image" \
+  -H "Content-Type: application/json" \
+  -d "$TEST_DATA")
+
+echo "$IMAGE_RESPONSE" | jq '. | del(.data.imageBase64)'  # 隐藏Base64数据以便查看
+echo "🖼️ 图片Base64数据长度: $(echo "$IMAGE_RESPONSE" | jq -r '.data.imageBase64 // ""' | wc -c) 字符"
 
 # 4. 测试直接下载PDF
 echo ""

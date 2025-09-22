@@ -43,7 +43,8 @@ func main() {
 		receipt := api.Group("/receipt")
 		{
 			receipt.POST("/generate", receiptHandler.GenerateReceipt)                  // 直接返回PDF文件
-			receipt.POST("/miniprogram", receiptHandler.GenerateReceiptForMiniProgram) // 为小程序返回Base64
+			receipt.POST("/miniprogram", receiptHandler.GenerateReceiptForMiniProgram) // 为小程序返回Base64 PDF
+			receipt.POST("/generate-image", receiptHandler.GenerateReceiptImage)       // 为小程序返回Base64图片
 			receipt.POST("/info", receiptHandler.GetReceiptInfo)
 
 			// 备份管理相关接口
@@ -66,6 +67,7 @@ func main() {
 			"endpoints": map[string]string{
 				"生成收据(PDF文件)":     "POST /api/receipt/generate",
 				"生成收据(小程序Base64)": "POST /api/receipt/miniprogram",
+				"生成收据图片(小程序)":     "POST /api/receipt/generate-image",
 				"预览信息":            "POST /api/receipt/info",
 				"备份文件列表":          "GET /api/receipt/backup/list",
 				"下载备份文件":          "GET /api/receipt/backup/download/{fileName}",

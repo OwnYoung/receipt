@@ -1,7 +1,13 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"os"
 	"path/filepath"
 	"receipt/internal/model"
@@ -9,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gen2brain/go-fitz"
+	"github.com/golang/freetype"
+	"github.com/golang/freetype/truetype"
 	"github.com/signintech/gopdf"
 )
 
@@ -42,6 +51,276 @@ func (s *PDFService) FillReceipt(data *model.ReceiptData) (string, error) {
 	}
 
 	return outputFilePath, nil
+}
+
+// GenerateReceiptImage 生成收据图片 (先生成PDF再转换为图片)
+func (s *PDFService) GenerateReceiptImage(data *model.ReceiptData) (string, error) {
+	// 先生成PDF
+	pdfPath, err := s.FillReceipt(data)
+	if err != nil {
+		return "", fmt.Errorf("生成PDF失败: %v", err)
+	}
+
+	// 使用go-fitz将PDF转换为图片
+	imageFilePath, err := s.convertPDFToImage(pdfPath, data.RoomNumber)
+	if err != nil {
+		return "", fmt.Errorf("PDF转图片失败: %v", err)
+	}
+
+	return imageFilePath, nil
+}
+
+// convertPDFToImage 使用go-fitz将PDF转换为图片
+func (s *PDFService) convertPDFToImage(pdfPath, roomNumber string) (string, error) {
+	// 生成输出图片文件名
+	timestamp := time.Now().Format("20060102_150405")
+	imageFileName := fmt.Sprintf("receipt_%s_%s.png", roomNumber, timestamp)
+	imageFilePath := filepath.Join(s.outputPath, imageFileName)
+
+	// 打开PDF文档
+	doc, err := fitz.New(pdfPath)
+	if err != nil {
+		return "", fmt.Errorf("打开PDF文档失败: %v", err)
+	}
+	defer doc.Close()
+
+	// 获取第一页作为图片
+	img, err := doc.Image(0) // 0 是第一页
+	if err != nil {
+		return "", fmt.Errorf("获取PDF页面图片失败: %v", err)
+	}
+
+	// 保存为PNG格式
+	f, err := os.Create(imageFilePath)
+	if err != nil {
+		return "", fmt.Errorf("创建图片文件失败: %v", err)
+	}
+	defer f.Close()
+
+	err = png.Encode(f, img)
+	if err != nil {
+		return "", fmt.Errorf("保存PNG图片失败: %v", err)
+	}
+
+	return imageFilePath, nil
+}
+
+// GenerateReceiptImageBase64 生成收据图片并返回Base64编码
+func (s *PDFService) GenerateReceiptImageBase64(data *model.ReceiptData) (string, error) {
+	// 先生成PDF
+	pdfPath, err := s.FillReceipt(data)
+	if err != nil {
+		return "", fmt.Errorf("生成PDF失败: %v", err)
+	}
+
+	// 使用go-fitz将PDF转换为图片
+	base64String, err := s.convertPDFToImageBase64(pdfPath)
+	if err != nil {
+		return "", fmt.Errorf("PDF转图片失败: %v", err)
+	}
+
+	return base64String, nil
+}
+
+// convertPDFToImageBase64 将PDF转换为图片并返回Base64编码
+func (s *PDFService) convertPDFToImageBase64(pdfPath string) (string, error) {
+	// 打开PDF文档
+	doc, err := fitz.New(pdfPath)
+	if err != nil {
+		return "", fmt.Errorf("打开PDF文档失败: %v", err)
+	}
+	defer doc.Close()
+
+	// 获取第一页作为图片
+	img, err := doc.Image(0) // 0 是第一页
+	if err != nil {
+		return "", fmt.Errorf("获取PDF页面图片失败: %v", err)
+	}
+
+	// 将图片编码为PNG格式并转换为Base64
+	var buf bytes.Buffer
+	err = png.Encode(&buf, img)
+	if err != nil {
+		return "", fmt.Errorf("编码PNG图片失败: %v", err)
+	}
+
+	// 转换为Base64字符串
+	base64String := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return base64String, nil
+}
+
+// generateReceiptImage 生成收据图片
+func (s *PDFService) generateReceiptImage(data *model.ReceiptData, outputPath string) error {
+	// 创建图片画布 (收据尺寸 176mm × 85mm，转换为像素，使用300DPI)
+	// 176mm * 300DPI / 25.4 ≈ 2079 pixels
+	// 85mm * 300DPI / 25.4 ≈ 1004 pixels
+	width := 2079
+	height := 1004
+
+	// 创建RGBA图像
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	// 填充白色背景
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{255, 255, 255, 255}}, image.ZP, draw.Src)
+
+	// 绘制收据内容
+	s.drawReceiptContent(img, data, width, height)
+
+	// 保存图片
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("创建图片文件失败: %v", err)
+	}
+	defer file.Close()
+
+	err = png.Encode(file, img)
+	if err != nil {
+		return fmt.Errorf("编码PNG图片失败: %v", err)
+	}
+
+	return nil
+}
+
+// drawReceiptContent 在图片上绘制收据内容
+func (s *PDFService) drawReceiptContent(img *image.RGBA, data *model.ReceiptData, width, height int) {
+	// 加载中文字体
+	fontBytes, err := os.ReadFile("fonts/FangZhengFangSong-GBK-1.ttf")
+	if err != nil {
+		// 如果加载中文字体失败，使用简化的英文绘制
+		s.drawReceiptContentSimple(img, data, width, height)
+		return
+	}
+
+	// 解析字体
+	f, err := truetype.Parse(fontBytes)
+	if err != nil {
+		s.drawReceiptContentSimple(img, data, width, height)
+		return
+	}
+
+	// 创建FreeType context
+	c := freetype.NewContext()
+	c.SetDPI(72)
+	c.SetFont(f)
+	c.SetFontSize(24)
+	c.SetClip(img.Bounds())
+	c.SetDst(img)
+	c.SetSrc(image.NewUniform(color.RGBA{0, 0, 0, 255}))
+
+	// 绘制边框
+	s.drawBorder(img, width, height)
+
+	// 标题
+	c.SetFontSize(36)
+	pt := freetype.Pt(width/2-80, 120)
+	c.DrawString("收款收据", pt)
+
+	// 右上角信息
+	c.SetFontSize(20)
+	pt = freetype.Pt(width-400, 140)
+	c.DrawString(fmt.Sprintf("收据号: %s", data.ID), pt)
+	pt = freetype.Pt(width-400, 170)
+	c.DrawString(fmt.Sprintf("日期: %s", data.Date), pt)
+
+	// 主要内容区域
+	c.SetFontSize(24)
+	y := 250
+	lineHeight := 70
+
+	pt = freetype.Pt(120, y)
+	c.DrawString(fmt.Sprintf("今收到 %s", data.Payer), pt)
+	y += lineHeight
+
+	pt = freetype.Pt(120, y)
+	c.DrawString(fmt.Sprintf("交来: %s", data.Purpose), pt)
+	y += lineHeight
+
+	pt = freetype.Pt(120, y)
+	c.DrawString(fmt.Sprintf("金额(大写) %s", data.RentZh), pt)
+	y += lineHeight + 50
+
+	// 小写金额
+	c.SetFontSize(28)
+	pt = freetype.Pt(120, y)
+	c.DrawString(fmt.Sprintf("¥ %s", data.Rent), pt)
+
+	// 支付方式
+	c.SetFontSize(18)
+	pt = freetype.Pt(width/2-300, y+50)
+	c.DrawString("现金 □  转账 □  支票 □  微信支付宝 □", pt)
+
+	// 右下角
+	pt = freetype.Pt(width-250, y+50)
+	c.DrawString("(盖章)", pt)
+	pt = freetype.Pt(width-250, height-120)
+	c.DrawString("经手人", pt)
+}
+
+// drawReceiptContentSimple 简化版本（备用方案）
+func (s *PDFService) drawReceiptContentSimple(img *image.RGBA, data *model.ReceiptData, width, height int) {
+	// 绘制边框
+	s.drawBorder(img, width, height)
+
+	// 使用简单的矩形来表示文本区域（当字体加载失败时）
+	col := color.RGBA{128, 128, 128, 255}
+
+	// 标题区域
+	s.drawFilledRect(img, width/2-80, 80, 160, 40, col)
+
+	// 内容区域
+	y := 200
+	lineHeight := 60
+
+	for i := 0; i < 6; i++ {
+		s.drawFilledRect(img, 100, y, width-200, 30, col)
+		y += lineHeight
+	}
+}
+
+// drawFilledRect 绘制填充矩形
+func (s *PDFService) drawFilledRect(img *image.RGBA, x, y, w, h int, col color.Color) {
+	for i := x; i < x+w && i < img.Bounds().Max.X; i++ {
+		for j := y; j < y+h && j < img.Bounds().Max.Y; j++ {
+			if i >= 0 && j >= 0 {
+				img.Set(i, j, col)
+			}
+		}
+	}
+} // drawBorder 绘制边框
+func (s *PDFService) drawBorder(img *image.RGBA, width, height int) {
+	col := color.RGBA{0, 0, 0, 255}
+	margin := 50
+
+	// 外边框
+	s.drawRectangle(img, margin, margin, width-margin*2, height-margin*2, col)
+
+	// 内部分割线
+	y := 180
+	for i := 0; i < 3; i++ {
+		s.drawLine(img, margin+20, y, width-margin-20, y, col)
+		y += 60
+	}
+}
+
+// drawLine 绘制直线
+func (s *PDFService) drawLine(img *image.RGBA, x1, y1, x2, y2 int, col color.Color) {
+	// 简单的水平线绘制
+	if y1 == y2 {
+		for x := x1; x <= x2; x++ {
+			if x >= 0 && x < img.Bounds().Max.X && y1 >= 0 && y1 < img.Bounds().Max.Y {
+				img.Set(x, y1, col)
+			}
+		}
+	}
+}
+
+// drawRectangle 绘制矩形边框
+func (s *PDFService) drawRectangle(img *image.RGBA, x, y, w, h int, col color.Color) {
+	// 绘制四条边
+	s.drawLine(img, x, y, x+w, y, col)     // 上边
+	s.drawLine(img, x, y+h, x+w, y+h, col) // 下边
+	s.drawLine(img, x, y, x, y+h, col)     // 左边
+	s.drawLine(img, x+w, y, x+w, y+h, col) // 右边
 }
 
 // generatePDF 使用gopdf从头生成PDF收据
@@ -479,4 +758,237 @@ func convertFourDigits(num int64, digits []string) string {
 	}
 
 	return result.String()
+}
+
+// generateImageBasedOnPDFStyle 基于PDF样式生成图片
+func (s *PDFService) generateImageBasedOnPDFStyle(data *model.ReceiptData, imagePath string) error {
+	// PDF尺寸：176mm × 85mm (54开)
+	// 转换为像素：使用300DPI
+	// 176mm * 300DPI / 25.4 ≈ 2079 pixels
+	// 85mm * 300DPI / 25.4 ≈ 1004 pixels
+	width := 2079
+	height := 1004
+
+	// 创建RGBA图像
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	// 填充白色背景
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{255, 255, 255, 255}}, image.ZP, draw.Src)
+
+	// 绘制收据内容 (使用与PDF相同的布局)
+	if err := s.drawReceiptContentLikePDF(img, data, width, height); err != nil {
+		return fmt.Errorf("绘制收据内容失败: %v", err)
+	}
+
+	// 保存图片
+	file, err := os.Create(imagePath)
+	if err != nil {
+		return fmt.Errorf("创建图片文件失败: %v", err)
+	}
+	defer file.Close()
+
+	err = png.Encode(file, img)
+	if err != nil {
+		return fmt.Errorf("编码PNG图片失败: %v", err)
+	}
+
+	return nil
+}
+
+// drawReceiptContentLikePDF 按照PDF样式绘制图片内容
+func (s *PDFService) drawReceiptContentLikePDF(img *image.RGBA, data *model.ReceiptData, width, height int) error {
+	// 加载中文字体
+	fontPath := "fonts/FangZhengFangSong-GBK-1.ttf"
+	fontBytes, err := os.ReadFile(fontPath)
+	if err != nil {
+		return fmt.Errorf("读取字体文件失败: %v", err)
+	}
+
+	font, err := truetype.Parse(fontBytes)
+	if err != nil {
+		return fmt.Errorf("解析字体失败: %v", err)
+	}
+
+	// 创建FreeType上下文
+	c := freetype.NewContext()
+	c.SetDPI(300)
+	c.SetFont(font)
+	c.SetClip(img.Bounds())
+	c.SetDst(img)
+	c.SetSrc(image.NewUniform(color.RGBA{0, 0, 0, 255}))
+
+	// PDF布局参数转换为像素
+	// PDF: 176mm × 85mm, 使用points转换，但需要放大以适应图片显示
+	// 使用更大的字体和间距以确保可读性
+	margin := 80
+	topMargin := 100
+
+	// 1. 绘制外边框
+	s.drawPDFStyleBorder(img, width, height, margin, topMargin)
+
+	// 2. 绘制标题："收款收据" (放大字体)
+	c.SetFontSize(120) // 增大标题字体
+	titleY := topMargin + 100
+	pt := freetype.Pt(width/2-240, titleY) // 重新计算居中位置
+	_, err = c.DrawString("收款收据", pt)
+	if err != nil {
+		return fmt.Errorf("绘制标题失败: %v", err)
+	}
+
+	// 3. 右上角收据编号和日期 (增大字体)
+	c.SetFontSize(60) // 增大字体
+	receiptNoY := topMargin + 60
+	pt = freetype.Pt(width-600, receiptNoY)
+	_, err = c.DrawString("收据号:", pt)
+	if err != nil {
+		return fmt.Errorf("绘制收据号标签失败: %v", err)
+	}
+
+	pt = freetype.Pt(width-400, receiptNoY)
+	_, err = c.DrawString(data.ID, pt)
+	if err != nil {
+		return fmt.Errorf("绘制收据号失败: %v", err)
+	}
+
+	// 日期
+	dateY := receiptNoY + 80
+	pt = freetype.Pt(width-600, dateY)
+	_, err = c.DrawString("日期:", pt)
+	if err != nil {
+		return fmt.Errorf("绘制日期标签失败: %v", err)
+	}
+
+	pt = freetype.Pt(width-400, dateY)
+	_, err = c.DrawString(data.Date, pt)
+	if err != nil {
+		return fmt.Errorf("绘制日期失败: %v", err)
+	}
+
+	// 4. "今收到"区域 (增大字体和间距)
+	c.SetFontSize(80) // 增大字体
+	todayReceivedY := topMargin + 250
+	s.drawPDFStyleRect(img, margin+50, todayReceivedY, width-2*margin-100, 120)
+
+	pt = freetype.Pt(margin+100, todayReceivedY+80)
+	_, err = c.DrawString("今收到 ", pt)
+	if err != nil {
+		return fmt.Errorf("绘制今收到前缀失败: %v", err)
+	}
+
+	// 设置蓝色字体
+	c.SetSrc(image.NewUniform(color.RGBA{0, 0, 255, 255}))
+	pt = freetype.Pt(margin+300, todayReceivedY+80)
+	_, err = c.DrawString(data.Payer, pt)
+	if err != nil {
+		return fmt.Errorf("绘制付款人失败: %v", err)
+	}
+	// 恢复黑色字体
+	c.SetSrc(image.NewUniform(color.RGBA{0, 0, 0, 255}))
+
+	// 5. "交来"区域
+	jiaolaiY := todayReceivedY + 150
+	s.drawPDFStyleRect(img, margin+50, jiaolaiY, width-2*margin-100, 120)
+
+	pt = freetype.Pt(margin+100, jiaolaiY+80)
+	text := fmt.Sprintf("交来: %s %s", data.Month, data.Purpose)
+	_, err = c.DrawString(text, pt)
+	if err != nil {
+		return fmt.Errorf("绘制交来失败: %v", err)
+	}
+
+	// 6. "金额(大写)"区域
+	amountY := jiaolaiY + 150
+	s.drawPDFStyleRect(img, margin+50, amountY, width-2*margin-100, 120)
+
+	pt = freetype.Pt(margin+100, amountY+80)
+	text = fmt.Sprintf("金额(大写) 人民币 %s", data.RentZh)
+	_, err = c.DrawString(text, pt)
+	if err != nil {
+		return fmt.Errorf("绘制金额大写失败: %v", err)
+	}
+
+	// 7. 底部区域：小写金额和支付方式 (增大字体)
+	c.SetFontSize(100) // 增大字体
+	bottomY := amountY + 200
+
+	// 设置蓝色字体
+	c.SetSrc(image.NewUniform(color.RGBA{0, 0, 255, 255}))
+	pt = freetype.Pt(margin+100, bottomY)
+	text = fmt.Sprintf("人民币¥ %s", data.Rent)
+	_, err = c.DrawString(text, pt)
+	if err != nil {
+		return fmt.Errorf("绘制小写金额失败: %v", err)
+	}
+	// 恢复黑色字体
+	c.SetSrc(image.NewUniform(color.RGBA{0, 0, 0, 255}))
+
+	// 支付方式选项 (增大字体)
+	c.SetFontSize(60) // 增大字体
+	paymentY := bottomY + 50
+	pt = freetype.Pt(width/2-300, paymentY)
+	_, err = c.DrawString("现金 □     转账 □", pt)
+	if err != nil {
+		return fmt.Errorf("绘制支付方式失败: %v", err)
+	}
+
+	pt = freetype.Pt(width/2-300, paymentY+80)
+	_, err = c.DrawString("支票 □  微信支付宝 □", pt)
+	if err != nil {
+		return fmt.Errorf("绘制支付方式2失败: %v", err)
+	}
+
+	// 右下角"(盖章)"
+	pt = freetype.Pt(width-300, paymentY+40)
+	_, err = c.DrawString("(盖章)", pt)
+	if err != nil {
+		return fmt.Errorf("绘制盖章失败: %v", err)
+	}
+
+	// 8. 底部"经手人" (增大字体)
+	c.SetFontSize(80) // 增大字体
+	handlerY := paymentY + 150
+	pt = freetype.Pt(margin+100, handlerY)
+	_, err = c.DrawString("经手人: ________________", pt)
+	if err != nil {
+		return fmt.Errorf("绘制经手人失败: %v", err)
+	}
+
+	return nil
+}
+
+// drawPDFStyleBorder 绘制PDF样式的边框
+func (s *PDFService) drawPDFStyleBorder(img *image.RGBA, width, height, margin, topMargin int) {
+	col := color.RGBA{0, 0, 0, 255}
+
+	// 外边框 (增加线条宽度)
+	borderWidth := 12 // 增大边框宽度
+
+	for i := 0; i < borderWidth; i++ {
+		// 上边
+		s.drawLine(img, margin+i, topMargin+i, width-margin-i, topMargin+i, col)
+		// 下边
+		s.drawLine(img, margin+i, height-topMargin-i, width-margin-i, height-topMargin-i, col)
+		// 左边
+		s.drawLine(img, margin+i, topMargin+i, margin+i, height-topMargin-i, col)
+		// 右边
+		s.drawLine(img, width-margin-i, topMargin+i, width-margin-i, height-topMargin-i, col)
+	}
+}
+
+// drawPDFStyleRect 绘制PDF样式的矩形框
+func (s *PDFService) drawPDFStyleRect(img *image.RGBA, x, y, w, h int) {
+	col := color.RGBA{0, 0, 0, 255}
+
+	// 绘制更粗的矩形边框
+	lineWidth := 3
+	for i := 0; i < lineWidth; i++ {
+		// 上边
+		s.drawLine(img, x+i, y+i, x+w-i, y+i, col)
+		// 下边
+		s.drawLine(img, x+i, y+h-i, x+w-i, y+h-i, col)
+		// 左边
+		s.drawLine(img, x+i, y+i, x+i, y+h-i, col)
+		// 右边
+		s.drawLine(img, x+w-i, y+i, x+w-i, y+h-i, col)
+	}
 }

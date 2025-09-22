@@ -207,6 +207,89 @@ func (h *ReceiptHandler) GenerateReceiptForMiniProgram(c *gin.Context) {
 	}()
 }
 
+// GenerateReceiptImage 生成收据图片
+// @Summary 生成收据图片
+// @Description 专门为小程序设计的接口，生成收据图片并返回Base64编码数据
+// @Tags 收据
+// @Accept json
+// @Produce json
+// @Param request body model.ReceiptRequest true "收据信息"
+// @Success 200 {object} map[string]interface{} "生成成功"
+// @Failure 400 {object} model.ReceiptResponse "请求参数错误"
+// @Failure 500 {object} model.ReceiptResponse "服务器内部错误"
+// @Router /api/receipt/generate-image [post]
+func (h *ReceiptHandler) GenerateReceiptImage(c *gin.Context) {
+	var req model.ReceiptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ReceiptResponse{
+			Success: false,
+			Message: "请求参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 转换为收据数据
+	data := service.ConvertReceiptToData(&req)
+
+	// 生成收据图片并直接返回Base64编码
+	base64Image, err := h.pdfService.GenerateReceiptImageBase64(data)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.ReceiptResponse{
+			Success: false,
+			Message: "生成收据图片失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 为备份功能，将Base64转换回字节数据
+	imageBytes, err := base64.StdEncoding.DecodeString(base64Image)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.ReceiptResponse{
+			Success: false,
+			Message: "图片数据处理失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 创建备份目录
+	backupDir := "backup"
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, model.ReceiptResponse{
+			Success: false,
+			Message: "创建备份目录失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 生成备份文件名
+	backupFileName := fmt.Sprintf("receipt_%s_%s.png", data.ID, time.Now().Format("20060102_150405"))
+	backupPath := filepath.Join(backupDir, backupFileName)
+
+	// 创建备份文件
+	err = os.WriteFile(backupPath, imageBytes, 0644)
+	if err != nil {
+		// 备份失败不影响主要功能，记录错误但继续执行
+		fmt.Printf("警告：备份图片文件失败: %v\n", err)
+	}
+
+	fileName := fmt.Sprintf("receipt_%s_%s.png", data.RoomNumber, time.Now().Format("20060102_150405"))
+
+	// 返回JSON响应给小程序
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "收据图片生成成功",
+		"data": gin.H{
+			"receiptId":    data.ID,
+			"fileName":     fileName,
+			"fileSize":     len(imageBytes),
+			"imageBase64":  base64Image,
+			"contentType":  "image/png",
+			"generateTime": time.Now().Format("2006-01-02 15:04:05"),
+			"backupPath":   backupPath,
+		},
+	})
+}
+
 // GetReceiptInfo 获取收据信息（仅返回JSON，不生成PDF）
 // @Summary 获取收据信息
 // @Description 接收小程序发送的租金、房间号、收款人等信息，返回处理后的信息（预览功能）

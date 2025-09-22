@@ -70,7 +70,47 @@ curl -X POST http://localhost:8090/api/receipt/miniprogram \
 
 ---
 
-## 3. 预览收据信息
+## 3. 为小程序生成收据图片 (Base64编码) ⭐ **推荐**
+
+**接口:** `POST /api/receipt/generate-image`
+
+**用途:** 返回Base64编码的PNG图片数据，最适合小程序使用
+
+**请求示例:**
+```bash
+curl -X POST http://localhost:8090/api/receipt/generate-image \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rent": 1500.00,
+    "room_number": "101",
+    "recipient": "张三",
+    "payer": "李四",
+    "date": "2025-09-21",
+    "month": "2025年09月",
+    "purpose": "房租"
+  }'
+```
+
+**响应示例:**
+```json
+{
+  "success": true,
+  "message": "收据图片生成成功",
+  "data": {
+    "receiptId": "NO10120250901",
+    "fileName": "receipt_101_20250921_143022.png",
+    "fileSize": 25234,
+    "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAA...",
+    "contentType": "image/png",
+    "generateTime": "2025-09-21 14:30:22",
+    "backupPath": "backup/receipt_NO10120250901_20250921_143022.png"
+  }
+}
+```
+
+---
+
+## 4. 预览收据信息
 
 **接口:** `POST /api/receipt/info`
 
@@ -109,7 +149,7 @@ curl -X POST http://localhost:8090/api/receipt/info \
 
 ---
 
-## 4. 健康检查
+## 5. 健康检查
 
 **接口:** `GET /health`
 
@@ -117,7 +157,7 @@ curl -X POST http://localhost:8090/api/receipt/info \
 
 ---
 
-## 5. 查看备份文件列表
+## 6. 查看备份文件列表
 
 **接口:** `GET /api/receipt/backup/list`
 
@@ -144,7 +184,7 @@ curl -X POST http://localhost:8090/api/receipt/info \
 
 ---
 
-## 6. 下载备份文件
+## 7. 下载备份文件
 
 **接口:** `GET /api/receipt/backup/download/{fileName}`
 
@@ -159,7 +199,63 @@ curl -X POST http://localhost:8090/api/receipt/info \
 
 ## 小程序集成建议
 
-### 方案1: 使用Base64接口 (推荐)
+### 方案1: 使用图片接口 (推荐) ⭐
+
+```javascript
+// 小程序代码示例 - 图片方案
+wx.request({
+  url: 'http://localhost:8090/api/receipt/generate-image',
+  method: 'POST',
+  header: {
+    'Content-Type': 'application/json'
+  },
+  data: {
+    rent: 1500.00,
+    room_number: "101",
+    recipient: "张三",
+    payer: "李四",
+    date: "2025-09-21",
+    month: "2025年09月",
+    purpose: "房租"
+  },
+  success: function(res) {
+    if (res.data.success) {
+      const imageData = res.data.data;
+      
+      // 将Base64转换为临时文件
+      const base64Data = imageData.imageBase64;
+      const fileName = imageData.fileName;
+      
+      // 保存到本地
+      const filePath = wx.env.USER_DATA_PATH + '/' + fileName;
+      wx.getFileSystemManager().writeFile({
+        filePath: filePath,
+        data: base64Data,
+        encoding: 'base64',
+        success: function() {
+          // 直接在小程序中显示图片
+          that.setData({
+            receiptImagePath: filePath
+          });
+          
+          // 或者保存到相册
+          wx.saveImageToPhotosAlbum({
+            filePath: filePath,
+            success: function() {
+              wx.showToast({
+                title: '收据已保存到相册',
+                icon: 'success'
+              });
+            }
+          });
+        }
+      });
+    }
+  }
+});
+```
+
+### 方案2: 使用Base64 PDF接口
 
 ```javascript
 // 小程序代码示例
@@ -204,7 +300,7 @@ wx.request({
 });
 ```
 
-### 方案2: 直接下载文件
+### 方案3: 直接下载文件
 
 ```javascript
 // 直接下载PDF文件
