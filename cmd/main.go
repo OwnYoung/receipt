@@ -45,6 +45,13 @@ func main() {
 			receipt.POST("/generate", receiptHandler.GenerateReceipt)                  // 直接返回PDF文件
 			receipt.POST("/miniprogram", receiptHandler.GenerateReceiptForMiniProgram) // 为小程序返回Base64
 			receipt.POST("/info", receiptHandler.GetReceiptInfo)
+
+			// 备份管理相关接口
+			backup := receipt.Group("/backup")
+			{
+				backup.GET("/list", receiptHandler.ListBackupReceipts)                  // 列出备份文件
+				backup.GET("/download/:fileName", receiptHandler.DownloadBackupReceipt) // 下载备份文件
+			}
 		}
 	}
 
@@ -60,6 +67,8 @@ func main() {
 				"生成收据(PDF文件)":     "POST /api/receipt/generate",
 				"生成收据(小程序Base64)": "POST /api/receipt/miniprogram",
 				"预览信息":            "POST /api/receipt/info",
+				"备份文件列表":          "GET /api/receipt/backup/list",
+				"下载备份文件":          "GET /api/receipt/backup/download/{fileName}",
 				"健康检查":            "GET /health",
 			},
 		})

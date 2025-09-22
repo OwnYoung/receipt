@@ -62,7 +62,8 @@ curl -X POST http://localhost:8090/api/receipt/miniprogram \
     "fileSize": 15234,
     "pdfBase64": "JVBERi0xLjQKJcOkw7zDtsOkdwoXZnNlcmdsZXJ0...",
     "contentType": "application/pdf",
-    "generateTime": "2025-09-21 14:30:22"
+    "generateTime": "2025-09-21 14:30:22",
+    "backupPath": "backup/receipt_NO10120250901_20250921_143022.pdf"
   }
 }
 ```
@@ -113,6 +114,46 @@ curl -X POST http://localhost:8090/api/receipt/info \
 **接口:** `GET /health`
 
 **用途:** 检查服务状态
+
+---
+
+## 5. 查看备份文件列表
+
+**接口:** `GET /api/receipt/backup/list`
+
+**用途:** 获取服务器上备份的收据文件列表
+
+**响应示例:**
+```json
+{
+  "success": true,
+  "message": "获取备份文件列表成功",
+  "data": {
+    "files": [
+      {
+        "fileName": "receipt_NO10120250921_20250921_143022.pdf",
+        "fileSize": 15234,
+        "modTime": "2025-09-21 14:30:22",
+        "downloadUrl": "/api/receipt/backup/download/receipt_NO10120250921_20250921_143022.pdf"
+      }
+    ],
+    "count": 1
+  }
+}
+```
+
+---
+
+## 6. 下载备份文件
+
+**接口:** `GET /api/receipt/backup/download/{fileName}`
+
+**用途:** 下载指定的备份收据文件
+
+**参数:**
+- `fileName`: 文件名（通过备份列表接口获取）
+
+**响应:** 直接返回PDF文件
 
 ---
 

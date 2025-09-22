@@ -1,0 +1,2 @@
+# 此文件确保backup目录被提交到git
+# 但目录内的PDF文件会被.gitignore忽略

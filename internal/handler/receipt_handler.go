@@ -3,9 +3,9 @@ package handler
 import (
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"receipt/internal/model"
 	"receipt/internal/service"
 	"strconv"
@@ -140,7 +140,7 @@ func (h *ReceiptHandler) GenerateReceiptForMiniProgram(c *gin.Context) {
 	}
 
 	// 读取PDF文件内容
-	pdfBytes, err := ioutil.ReadFile(outputPath)
+	pdfBytes, err := os.ReadFile(outputPath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ReceiptResponse{
 			Success: false,
@@ -151,6 +151,27 @@ func (h *ReceiptHandler) GenerateReceiptForMiniProgram(c *gin.Context) {
 
 	// 转换为Base64编码
 	base64PDF := base64.StdEncoding.EncodeToString(pdfBytes)
+
+	// 创建备份目录
+	backupDir := "backup"
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, model.ReceiptResponse{
+			Success: false,
+			Message: "创建备份目录失败: " + err.Error(),
+		})
+		return
+	}
+
+	// 生成备份文件名（包含时间戳和收据ID）
+	backupFileName := fmt.Sprintf("receipt_%s_%s.pdf", data.ID, time.Now().Format("20060102_150405"))
+	backupPath := filepath.Join(backupDir, backupFileName)
+
+	// 创建备份文件
+	err = os.WriteFile(backupPath, pdfBytes, 0644)
+	if err != nil {
+		// 备份失败不影响主要功能，记录错误但继续执行
+		fmt.Printf("警告：备份文件失败: %v\n", err)
+	}
 
 	// 获取文件信息
 	fileInfo, err := os.Stat(outputPath)
@@ -175,6 +196,7 @@ func (h *ReceiptHandler) GenerateReceiptForMiniProgram(c *gin.Context) {
 			"pdfBase64":    base64PDF,
 			"contentType":  "application/pdf",
 			"generateTime": time.Now().Format("2006-01-02 15:04:05"),
+			"backupPath":   backupPath, // 返回备份路径信息
 		},
 	})
 
@@ -228,4 +250,105 @@ func (h *ReceiptHandler) HealthCheck(c *gin.Context) {
 		"message": "收据服务运行正常",
 		"service": "receipt-service",
 	})
+}
+
+// ListBackupReceipts 列出备份的收据文件
+// @Summary 列出备份的收据文件
+// @Description 获取服务器上备份的收据文件列表
+// @Tags 收据
+// @Produce json
+// @Success 200 {object} map[string]interface{} "获取成功"
+// @Failure 500 {object} model.ReceiptResponse "服务器内部错误"
+// @Router /api/receipt/backup/list [get]
+func (h *ReceiptHandler) ListBackupReceipts(c *gin.Context) {
+	backupDir := "backup"
+
+	// 检查备份目录是否存在
+	if _, err := os.Stat(backupDir); os.IsNotExist(err) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "暂无备份文件",
+			"data": gin.H{
+				"files": []interface{}{},
+				"count": 0,
+			},
+		})
+		return
+	}
+
+	// 读取备份目录
+	files, err := os.ReadDir(backupDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.ReceiptResponse{
+			Success: false,
+			Message: "读取备份目录失败: " + err.Error(),
+		})
+		return
+	}
+
+	var backupFiles []map[string]interface{}
+	for _, file := range files {
+		if !file.IsDir() && filepath.Ext(file.Name()) == ".pdf" {
+			info, err := file.Info()
+			if err != nil {
+				continue
+			}
+
+			backupFiles = append(backupFiles, map[string]interface{}{
+				"fileName":    file.Name(),
+				"fileSize":    info.Size(),
+				"modTime":     info.ModTime().Format("2006-01-02 15:04:05"),
+				"downloadUrl": fmt.Sprintf("/api/receipt/backup/download/%s", file.Name()),
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取备份文件列表成功",
+		"data": gin.H{
+			"files": backupFiles,
+			"count": len(backupFiles),
+		},
+	})
+}
+
+// DownloadBackupReceipt 下载备份的收据文件
+// @Summary 下载备份的收据文件
+// @Description 根据文件名下载指定的备份收据文件
+// @Tags 收据
+// @Param fileName path string true "文件名"
+// @Produce application/pdf
+// @Success 200 {file} binary "PDF文件"
+// @Failure 404 {object} model.ReceiptResponse "文件不存在"
+// @Failure 500 {object} model.ReceiptResponse "服务器内部错误"
+// @Router /api/receipt/backup/download/{fileName} [get]
+func (h *ReceiptHandler) DownloadBackupReceipt(c *gin.Context) {
+	fileName := c.Param("fileName")
+	backupPath := filepath.Join("backup", fileName)
+
+	// 检查文件是否存在
+	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, model.ReceiptResponse{
+			Success: false,
+			Message: "备份文件不存在",
+		})
+		return
+	}
+
+	// 检查文件扩展名安全性
+	if filepath.Ext(fileName) != ".pdf" {
+		c.JSON(http.StatusBadRequest, model.ReceiptResponse{
+			Success: false,
+			Message: "不支持的文件类型",
+		})
+		return
+	}
+
+	// 设置响应头
+	c.Header("Content-Type", "application/pdf")
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", fileName))
+
+	// 返回文件
+	c.File(backupPath)
 }
